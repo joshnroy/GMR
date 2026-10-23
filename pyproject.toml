@@ -45,3 +45,10 @@ viser = ["viser"]
 
 [tool.setuptools.packages.find]
 include = ["general_motion_retargeting*", "third_party*"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long-running regression tests (deselect with -m 'not slow')"]
