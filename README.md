@@ -371,6 +371,41 @@ python scripts/bvh_to_robot_dataset.py --src_folder <path_to_dir_of_bvh_data> --
 
 By default there is no visualization for batch retargeting.
 
+### Floor-aware retargeting (LAFAN1 to Sprout)
+
+Plain GMR solves each frame on its own and does not know about the floor. `general_motion_retargeting/floor_aware.py` adds a floor-aware pipeline on top of it, aimed at motions with floor contact (crawling, lying, falls) and at clean training data. It runs headless and writes one pkl per clip:
+
+```bash
+# single motion
+python scripts/bvh_to_robot_floor_aware.py --bvh_file <path_to_bvh> --save_path <output.pkl>
+# a folder of motions -> <save_dir>/<clip>.pkl; existing outputs are skipped, so an interrupted run can be resumed
+python scripts/bvh_to_robot_floor_aware.py --bvh_dir <dir_of_bvh> --save_dir <save_dir>
+```
+
+The pkl has the same keys as `bvh_to_robot.py`, plus `contacts` (`names`, and a per-frame `weight` array) and `frames_corrected` (frames pushed out of the floor per round). From Python: `retarget_motion(frames, "sprout", human_height)`, or `FloorAwareRetargeting` as a drop-in subclass of `GeneralMotionRetargeting` for the IK stage alone. Parameters are in the frozen `FloorAwareParams` dataclass; the defaults are the tuned values.
+
+What each part fixes:
+
+| Part | Problem in plain GMR | Change |
+| --- | --- | --- |
+| Floor constraint + push-out | geometry under the floor (up to 39 cm) | a mink collision limit keeps geoms out of the floor during the IK; after smoothing, frames still under are pushed out by a small IK that moves only the parts under the floor, with the corrections smoothed over time |
+| Contact targets + contact pinning | feet, knees, hands, hips hovering while the human touches the floor (GMR's targets sit a few cm above the floor because of scaling and link offsets) | while the human part is on the floor (height hysteresis, ramped weights), the robot link and GMR's own target for it are pulled onto the floor; a later pass makes every contact link follow a smooth floor-pinned path |
+| Foot stance + locking | feet sliding while planted, and dragging after the human lifts them | a foot is planted while the human foot is low *and* nearly still; during a stance it targets one fixed floor point |
+| Temporal smoothing | jitter on the ground and in dances | posture/pelvis terms toward the previous frame in the IK, zero-phase low-pass afterwards |
+| Arms aimed by direction + twist continuity | shoulder-twist flips (1,100-1,500 deg/s) with the arm raised, where two of Sprout's shoulder axes line up | elbow and hand target the human arm directions at the robot's segment lengths; shoulder yaw/roll pulled toward the previous frame |
+| Torso from the human chest, heavier torso/pelvis weights | torso twisting against the hips about 2x the human (std 8.4 vs 4.8 deg) | torso aimed by the shoulder line and hips-to-neck line instead of the `Spine2` joint (std 5.9 deg) |
+
+Measured on all 77 LAFAN1 clips (plain GMR -> floor-aware):
+
+- Deepest penetration per clip: median 10.8 -> 2.7 cm, worst 38.7 -> 14.5 cm; frames with any geometry more than 3 cm under the floor: 15.9% -> 0.01% (71 frames in 17 clips).
+- Contact parts within 2 cm of the floor (neither hovering nor sunk) while the human part is on it: feet 71 -> 96%, knees 49 -> 91%, hands 20 -> 81%, hips/chest 26 -> 43%.
+- Frames with a shoulder twisting faster than 600 deg/s: 4,924 -> 554.
+- Horizontal wander of a foot within one stance: median 3.7 -> 2.5 cm.
+
+Tests: `uv run pytest` (`-m "not slow"` to skip the regression test, which runs only when `GMR_LAFAN1_BVH_DIR` and `GMR_FLOOR_AWARE_REFERENCE_DIR` point at LAFAN1 BVHs and reference outputs).
+
+Limitations: only Sprout from LAFAN1 BVH has a body/joint table (`ROBOT_SPECS`; other robots raise an error until one is added). Some hovering remains on ground and fall clips (hips/chest especially), since Sprout's proportions cannot keep every contact of the human pose on the floor at once. Up to about 3 cm of penetration is allowed by design (tighter tolerances lifted contacts back off the floor). Foot locking holds a stance to a smaller area but does not stop the foot rocking heel-to-toe within it: frames where a planted foot link moves faster than 10 cm/s went from 29% to 36%. Runtime is roughly 6-10 s per minute of motion on a desktop CPU.
+
 
 
 ## Retargeting from Xsens to Robot

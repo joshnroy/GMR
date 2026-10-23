@@ -3,7 +3,7 @@
 Plain GMR retargets each frame on its own and knows nothing about the floor. On LAFAN1 to Sprout this showed as
 geometry up to 39 cm under the floor, feet, knees and hands hovering while the human touches the floor, jitter on the
 ground and in dances, shoulder-twist flips in raised-arm poses, a torso twisting about twice as much as the human, and
-feet sliding while planted. This module fixes those in two stages.
+feet sliding while planted. This module reduces those in two stages.
 
 IK stage (``FloorAwareRetargeting``, a drop-in subclass of ``GeneralMotionRetargeting``):
 
@@ -29,7 +29,8 @@ Post-processing (``postprocess``, on the whole clip):
    limit only stops geometry going further in; it never pushes out what is already under.)
 3. Contact pinning and foot locking: one IK pass makes each contact link follow a smooth path whose height is blended
    onto the floor by its contact weight; a planted foot targets one fixed floor point (its median position over the
-   stance). The pass's corrections are smoothed. Raw GMR slides in 45-65% of planted-foot frames.
+   stance). The pass's corrections are smoothed. GMR has no notion of a planted foot; over LAFAN1 this cut the foot's
+   horizontal wander within a stance from 3.7 to 2.5 cm (median).
 4. Final push-out of anything left more than 3 cm under the floor, in up to three smoothed rounds. The tolerance is
    deliberately loose: tighter tolerances lifted raised contacts back off the floor.
 
